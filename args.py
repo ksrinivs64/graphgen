@@ -26,7 +26,7 @@ class Args:
 
         # Check datasets/process_dataset for datasets
         # Select dataset to train the model
-        self.graph_type = 'Lung'
+        self.graph_type = 'eth150'
         self.num_graphs = None  # Set it None to take complete dataset
 
         # Whether to produce networkx format graphs for real datasets
@@ -107,7 +107,7 @@ class Args:
         # Calcuated at run time
         self.current_model_save_path = self.model_save_path + \
             self.fname + '_' + self.time + '/'
-        self.current_dataset_path = None
+        self.current_dataset_path = '/data/eth150/*/*full.json.bz2'
         self.current_processed_dataset_path = None
         self.current_min_dfscode_path = None
         self.current_temp_path = self.temp_path + self.fname + '_' + self.time + '/'

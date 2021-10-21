@@ -9,6 +9,9 @@ import bisect
 import networkx as nx
 import numpy as np
 from tqdm.auto import tqdm
+import json
+from glob import glob
+import bz2
 
 from utils import mkdir
 from datasets.preprocess import (
@@ -34,6 +37,60 @@ def check_graph_size(
 
     return True
 
+
+def produce_graphs_from_analysis(inputpath, output_path, num_graphs=None, min_num_nodes=None,
+    max_num_nodes=None, min_num_edges=None, max_num_edges=None
+):
+    """                                                                                                                                                 
+    :param inputfile: Path to file containing graphs in raw format                                                                                      
+    :param output_path: Path to store networkx graphs                                                                                                   
+    :param num_graphs: Upper bound on number of graphs to be taken                                                                                      
+    :param min_num_nodes: Lower bound on number of nodes in graphs if provided                                                                          
+    :param max_num_nodes: Upper bound on number of nodes in graphs if provided                                                                          
+    :param min_num_edges: Lower bound on number of edges in graphs if provided                                                                          
+    :param max_num_edges: Upper bound on number of edges in graphs if provided                                                                          
+    :return: number of graphs produced                                                                                                                  
+    """
+    count = 0
+    for inputfile in glob(inputpath, recursive=True):
+        with bz2.open(inputfile, 'rb') as f:
+            data = json.load(f)
+        G = nx.DiGraph(id=os.path.basename(inputfile))
+        for node in data['nodes']:
+            lbl = None
+            if 'text' in node:
+                lbl = node['text']
+            elif 'feature' in node:
+                lbl = node['feature']
+            if lbl is not None:
+                G.add_node(node['id'], label=lbl)
+
+        for node in data['nodes']:
+            if 'edges' in node and len(node['edges']) > 0:
+                for e in node['edges']:
+                    print(e)
+                    if G.has_node(e) and G.has_node(node['id']):
+                        G.add_edge(node['id'], e)
+
+        if not check_graph_size(
+                G, min_num_nodes, max_num_nodes, min_num_edges, max_num_edges
+            ):
+                continue
+
+        roots = set()
+        
+        for node in G.nodes():
+            if len(list(G.predecessors(node))) == 0:
+                roots.add(node)
+
+        print(list(nx.edge_dfs(G, roots, orientation='original')))
+
+        if num_graphs and count >= num_graphs:
+            break
+    
+    return count
+    
+        
 
 def produce_graphs_from_raw_format(
     inputfile, output_path, num_graphs=None, min_num_nodes=None,
@@ -294,6 +351,11 @@ def create_graphs(args):
         input_path = base_path + 'lung.txt'
         min_num_nodes, max_num_nodes = None, 50
         min_num_edges, max_num_edges = None, None
+    elif 'eth150' == args.graph_type:
+        base_path = os.path.join(args.dataset_path, 'eth150/')
+        input_path = '/data/eth150/*/*full.json.bz2'
+        min_num_nodes, max_num_nodes = None, None
+        min_num_edges, max_num_edges = None, None
 
     elif 'Breast' == args.graph_type:
         base_path = os.path.join(args.dataset_path, 'Breast/')
@@ -377,6 +439,12 @@ def create_graphs(args):
                 base_path, args.graph_type, args.current_dataset_path,
                 num_graphs=args.num_graphs, iterations=random_walk_iterations,
                 num_factor=num_factor, min_num_nodes=min_num_nodes,
+                max_num_nodes=max_num_nodes, min_num_edges=min_num_edges,
+                max_num_edges=max_num_edges)
+        elif args.graph_type in ['eth150']:
+            count = produce_graphs_from_analysis(
+                input_path, args.current_dataset_path,
+                num_graphs=args.num_graphs, min_num_nodes=min_num_nodes,
                 max_num_nodes=max_num_nodes, min_num_edges=min_num_edges,
                 max_num_edges=max_num_edges)
 
