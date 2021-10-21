@@ -52,45 +52,88 @@ def produce_graphs_from_analysis(inputpath, output_path, num_graphs=None, min_nu
     :return: number of graphs produced                                                                                                                  
     """
     count = 0
-    for inputfile in glob(inputpath, recursive=True):
-        with bz2.open(inputfile, 'rb') as f:
-            data = json.load(f)
-        G = nx.DiGraph(id=os.path.basename(inputfile))
-        for node in data['nodes']:
-            lbl = None
-            if 'text' in node:
-                lbl = node['text']
-            elif 'feature' in node:
-                lbl = node['feature']
-            if lbl is not None:
-                G.add_node(node['id'], label=lbl)
+    try:
+        for inputfile in glob(inputpath):
+            with bz2.open(inputfile, 'rb') as f:
+                data = json.load(f)
+            G = nx.DiGraph(id=os.path.basename(inputfile))
+            nodeIdTolabel = {}
+            for node in data['nodes']:
+                lbl = None
+                if 'text' in node:
+                    lbl = node['text']
+                elif 'feature' in node:
+                    lbl = node['feature']
+                if lbl is not None:
+                    G.add_node(node['id'], label=lbl)
+                    nodeIdTolabel[node['id']] = lbl
 
-        for node in data['nodes']:
-            if 'edges' in node and len(node['edges']) > 0:
-                for e in node['edges']:
-                    print(e)
-                    if G.has_node(e) and G.has_node(node['id']):
-                        G.add_edge(node['id'], e)
+            for node in data['nodes']:
+                if 'edges' in node and len(node['edges']) > 0:
+                    for e in node['edges']:
+                        if G.has_node(e) and G.has_node(node['id']):
+                            #print('edge:' + str(node['id']) + '-'+ str(e))
+                            G.add_edge(node['id'], e, label='flowsTo')
 
-        if not check_graph_size(
-                G, min_num_nodes, max_num_nodes, min_num_edges, max_num_edges
-            ):
-                continue
+            if not check_graph_size(
+                    G, min_num_nodes, max_num_nodes, min_num_edges, max_num_edges
+                ):
+                    continue
 
-        roots = set()
-        
-        for node in G.nodes():
-            if len(list(G.predecessors(node))) == 0:
-                roots.add(node)
+            roots = set()
 
-        print(list(nx.edge_dfs(G, roots, orientation='original')))
+            for node in G.nodes():
+                if len(list(G.predecessors(node))) == 0 and len(list(G.successors(node))) > 0:
+                    roots.add(node)
 
-        if num_graphs and count >= num_graphs:
-            break
+            for root in roots:
+                connected_nodes = []
+                for e in nx.edge_dfs(G, root, orientation='original'):
+                    connected_nodes.append(e[0])
+                    connected_nodes.append(e[1])
+
+                g = G.subgraph(connected_nodes).copy()
+                if len(g) < 2:
+                    continue
+
+                mapping = {}
+                c = 0
+                for node in g.nodes:
+                    mapping[node] = c
+                    c += 1
+                g.relabel_nodes(mapping, copy=False)
+
+                with open(os.path.join(
+                        output_path, 'graph{}.dat'.format(count)), 'wb') as f:
+                    pickle.dump(g, f)
+                    count += 1
+
+            if num_graphs and count >= num_graphs:
+                break
+    except:
+        pass
     
     return count
-    
-        
+
+def placeholder_dfs(G, roots):
+    # map returned DFS to minDFScodes and store as a pickle file for later use
+    node_counter = 0
+    nodeIdToDFSid = {}
+    df_codes = []
+
+    for node in G.nodes():
+        if len(list(G.predecessors(node))) == 0:
+            roots.add(node)
+
+    for e in nx.edge_dfs(G, roots, orientation='original'):
+        if e[0] not in nodeIdToDFSid:
+            nodeIdToDFSid[e[0]] = node_counter
+            node_counter += 1
+        if e[1] not in nodeIdToDFSid:
+            nodeIdToDFSid[e[1]] = node_counter
+            node_counter += 1
+        df_codes.append((nodeIdToDFSid[e[0]], nodeIdToDFSid[e[1]], nodeIdTolabel[e[0]], 'flowsTo', nodeIdTolabel[e[1]]))
+
 
 def produce_graphs_from_raw_format(
     inputfile, output_path, num_graphs=None, min_num_nodes=None,
@@ -353,7 +396,7 @@ def create_graphs(args):
         min_num_edges, max_num_edges = None, None
     elif 'eth150' == args.graph_type:
         base_path = os.path.join(args.dataset_path, 'eth150/')
-        input_path = '/data/eth150/*/*full.json.bz2'
+        input_path = args.current_dataset_path
         min_num_nodes, max_num_nodes = None, None
         min_num_edges, max_num_edges = None, None
 
